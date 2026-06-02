@@ -26,6 +26,8 @@ class SparkState:
     arousal: float
     age: int  # Ticks seit Geburt
     prediction_history: list = field(default_factory=list)
+    last_prediction: Optional[float] = None
+    alive: bool = True
     
     def save(self, path: str):
         """Speichere Zustand für Hibernation."""
@@ -34,7 +36,16 @@ class SparkState:
             membrane=self.membrane,
             threshold=self.threshold,
             weights=self.weights,
-            meta=np.array([self.energy, self.curiosity, self.arousal, self.age, self.neurons])
+            prediction_history=np.array(self.prediction_history, dtype=float),
+            meta=np.array([
+                self.energy,
+                self.curiosity,
+                self.arousal,
+                self.age,
+                self.neurons,
+                np.nan if self.last_prediction is None else self.last_prediction,
+                1.0 if self.alive else 0.0,
+            ])
         )
     
     @classmethod
@@ -50,7 +61,10 @@ class SparkState:
             energy=float(meta[0]),
             curiosity=float(meta[1]),
             arousal=float(meta[2]),
-            age=int(meta[3])
+            age=int(meta[3]),
+            prediction_history=data['prediction_history'].tolist() if 'prediction_history' in data else [],
+            last_prediction=None if len(meta) < 6 or np.isnan(meta[5]) else float(meta[5]),
+            alive=bool(meta[6]) if len(meta) >= 7 else True,
         )
 
 
@@ -70,6 +84,8 @@ class Spark:
     METABOLISM_COST = 0.001  # Energie pro Tick
     PREDICTION_REWARD = 0.01
     PREDICTION_PENALTY = 0.005
+    SUCCESS_MIN_AGE = 500
+    SUCCESS_MIN_ENERGY = 1.0
     
     def __init__(self, neurons: int = 64, seed: Optional[int] = None):
         """
@@ -285,7 +301,9 @@ class Spark:
             curiosity=self.curiosity,
             arousal=self.arousal,
             age=self.age,
-            prediction_history=self.prediction_error_history.copy()
+            prediction_history=self.prediction_error_history.copy(),
+            last_prediction=self.last_prediction,
+            alive=self.alive,
         )
     
     def hibernate(self, path: str):
@@ -306,8 +324,14 @@ class Spark:
         spark.arousal = state.arousal
         spark.age = state.age
         spark.prediction_error_history = state.prediction_history
+        spark.last_prediction = state.last_prediction
+        spark.alive = state.alive
         print(f"Spark awakened from {path} (age={spark.age}, energy={spark.energy:.3f})")
         return spark
+
+    def is_successful(self) -> bool:
+        """Ein Spark gilt als erfolgreich, wenn er alt genug ist und Energie hält."""
+        return self.alive and self.age >= self.SUCCESS_MIN_AGE and self.energy >= self.SUCCESS_MIN_ENERGY
     
     def stats(self) -> dict:
         """Statistiken über das aktuelle Netz."""
