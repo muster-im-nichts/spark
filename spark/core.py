@@ -31,6 +31,9 @@ class SparkState:
     
     def save(self, path: str):
         """Speichere Zustand für Hibernation."""
+        # np.savez_compressed adds .npz automatically, so strip it if present
+        if path.endswith('.npz'):
+            path = path[:-4]
         np.savez_compressed(
             path,
             membrane=self.membrane,
@@ -51,6 +54,9 @@ class SparkState:
     @classmethod
     def load(cls, path: str) -> "SparkState":
         """Lade Zustand aus Hibernation."""
+        # np.savez_compressed saves with .npz, so add it if not present
+        if not path.endswith('.npz'):
+            path = path + '.npz'
         data = np.load(path)
         meta = data['meta']
         return cls(
